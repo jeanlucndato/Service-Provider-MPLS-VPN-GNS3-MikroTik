@@ -1,0 +1,28 @@
+Parfait : PE1 et P1 ont maintenant l'underlay complet, avec OSPF, les loopbacks et les labels LDP.
+
+
+1. Une loopback en **/32** (`/interface bridge add name=loopback` puis `/ip address add address=<loopback-PE2>/32 interface=loopback`), avec une IP libre, différente de `.1`, `.2`, `.6`, `.10` et `.26`.
+2. Un template OSPF passif pour cette loopback (`/routing ospf interface-template add area=BACKBONE interfaces=loopback passive`).
+3. Une entrée `interface=all` dans `/mpls interface`.
+4. Une instance LDP avec la loopback comme `lsr-id` et `transport-addresses`, puis `/mpls ldp interface add interface=<lien-vers-P2>`.
+5. Le même contrôle sur **P2** : l'interface qui mène à PE2 doit figurer dans `/mpls ldp interface`.
+
+Pendant ce temps, tu peux préparer BGP sur PE1, parce que ces trois blocs ne dépendent pas de PE2. Ce sont les filtres de l'étape 1, avec ton router-id réel :
+
+```
+/routing filter community-ext-list
+add list=VPN-RT-OK communities=rt:65000:100
+
+/routing filter rule
+add chain=VPNV4-IN  rule="if (afi vpnv4 && bgp-ext-communities any-list VPN-RT-OK) { accept; }"
+add chain=VPNV4-IN  rule="reject;"
+add chain=VPNV4-OUT rule="if (afi vpnv4) { accept; }"
+add chain=VPNV4-OUT rule="reject;"
+
+/routing bgp instance print
+/routing bgp instance add name=default as=65000 router-id=10.255.0.26
+
+/routing bgp template
+add name=PE-IBGP as=65000 afi=vpnv4 router-id=10.255.0.26 \
+    input.filter=VPNV4-IN output.filter-chain=VPNV4-OUT
+```
